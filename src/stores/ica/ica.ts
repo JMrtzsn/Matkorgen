@@ -16,7 +16,6 @@ import type {
   Product,
   CartItem,
   CartContents,
-  SessionUrls,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -351,29 +350,6 @@ export class Ica implements GroceryStore {
     return { items, totalItems, totalPrice };
   }
 
-  async getSessionUrls(): Promise<SessionUrls> {
-    const session = this.requireSession();
-
-    const cookies = session.cookies
-      .filter((c) => c.domain.includes('ica.se'))
-      .map((c) => ({
-        name: c.name,
-        value: c.value,
-        domain: c.domain,
-        path: c.path,
-        secure: c.secure,
-        httpOnly: c.httpOnly,
-        sameSite: c.sameSite === 'Lax' ? 'lax' : c.sameSite === 'Strict' ? 'strict' : 'no_restriction',
-        ...(c.expires > 0 ? { expirationDate: c.expires } : {}),
-      }));
-
-    return {
-      storeUrl: `${BASE}/stores/${session.storeId}`,
-      cartUrl: `${BASE}/stores/${session.storeId}/basket`,
-      authenticated: session.authenticated,
-      cookies,
-    };
-  }
 
   async close(): Promise<void> {
     this.session = undefined;

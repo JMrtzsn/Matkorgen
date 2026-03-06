@@ -36,10 +36,10 @@ describe('MCP server e2e', () => {
     await client.close();
   }, 15000);
 
-  it('lists all seven tools', async () => {
+  it('lists all six tools', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(['add_to_cart', 'edit_cart', 'get_cart', 'get_session_url', 'login', 'search_products', 'set_store']);
+    expect(names).toEqual(['add_to_cart', 'edit_cart', 'get_cart', 'login', 'search_products', 'set_store']);
   }, 10000);
 
   it('requires set_store before search', async () => {
@@ -51,7 +51,7 @@ describe('MCP server e2e', () => {
     expect((result.content as any)[0].text).toContain('set_store');
   }, 10000);
 
-  it('set_store → search → add → get → edit → verify → session_url → cleanup', async () => {
+  it('set_store → search → add → get → edit → verify → cleanup', async () => {
     // 0. Set store
     console.error('--- Step 0: set_store ---');
     const storeResult = await client.callTool({
@@ -154,25 +154,8 @@ describe('MCP server e2e', () => {
     expect(updatedItem.quantity).toBe(newQty);
     console.error(`Verified: ${updatedItem.name}, qty: ${updatedItem.quantity}`);
 
-    // 6. Get session URL and cookies
-    console.error('--- Step 6: get_session_url ---');
-    const sessionResult = await client.callTool({
-      name: 'get_session_url',
-      arguments: {},
-    });
-    expect(sessionResult.isError).toBeFalsy();
-    const sessionText = (sessionResult.content as any)[0].text as string;
-    expect(sessionText).toContain('Store URL:');
-    expect(sessionText).toContain('Cart URL:');
-    expect(sessionText).toContain('1003577');
-    const jsonStart = sessionText.indexOf('[');
-    expect(jsonStart).toBeGreaterThan(-1);
-    const cookies = JSON.parse(sessionText.slice(jsonStart));
-    expect(Array.isArray(cookies)).toBe(true);
-    console.error(`Session URLs + ${cookies.length} cookies exported`);
-
-    // 7. Clean up — remove from cart
-    console.error('--- Step 7: edit_cart → remove ---');
+    // 6. Clean up — remove from cart
+    console.error('--- Step 6: edit_cart → remove ---');
     const removeResult = await client.callTool({
       name: 'edit_cart',
       arguments: { productId: product.id, quantity: 0 },

@@ -33,23 +33,6 @@ export interface CartContents {
   totalPrice?: string;
 }
 
-export interface SessionUrls {
-  storeUrl: string;
-  cartUrl: string;
-  authenticated: boolean;
-  cookies: SessionCookie[];
-}
-
-export interface SessionCookie {
-  name: string;
-  value: string;
-  domain: string;
-  path: string;
-  secure: boolean;
-  httpOnly: boolean;
-  sameSite: string;
-  expirationDate?: number;
-}
 
 // ---------------------------------------------------------------------------
 // Adapter interface — one implementation per store chain
@@ -80,8 +63,6 @@ export interface GroceryStore {
   /** Return the current cart contents. */
   getCart(): Promise<CartContents>;
 
-  /** Return store/cart URLs and exportable cookies. */
-  getSessionUrls(): Promise<SessionUrls>;
 
   /** Tear down any resources held by the adapter. */
   close(): Promise<void>;

@@ -207,43 +207,6 @@ server.registerTool(
   },
 );
 
-// --- get_session_url ---
-server.registerTool(
-  'get_session_url',
-  {
-    description:
-      'Get store/cart URLs and exportable session cookies. Requires set_store.',
-  },
-  async () => {
-    try {
-      const result = await requireStore().getSessionUrls();
-
-      const lines = [
-        `Store URL: ${result.storeUrl}`,
-        `Cart URL:  ${result.cartUrl}`,
-        `Authenticated: ${result.authenticated}`,
-        '',
-        'To use in your browser:',
-        '1. Install a cookie-manager extension (e.g. EditThisCookie)',
-        '2. Navigate to the store URL above',
-        '3. Delete existing cookies for the site',
-        '4. Import the cookies JSON below',
-        '5. Refresh the page',
-        '',
-        JSON.stringify(result.cookies, null, 2),
-      ];
-
-      return {
-        content: [{ type: 'text' as const, text: lines.join('\n') }],
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
-    }
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Start
