@@ -280,9 +280,12 @@ export class Ica implements GroceryStore {
     const res = await this.fetch(`/api/webproductpagews/v6/product-pages/search?${params}`);
     const data = await res.json();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const groups: any[] = data.productGroups ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw: any[] = groups.flatMap((g: any) => g.decoratedProducts ?? []);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return raw.map((r: any) => {
       const productId = String(r.productId ?? '');
       const retailerId = String(r.retailerProductId ?? '');
@@ -324,11 +327,13 @@ export class Ica implements GroceryStore {
   }
 
   async getCart(): Promise<CartContents> {
-    const session = this.requireSession();
+    this.requireSession();
     const res = await this.fetch('/api/cart/v1/carts/active');
     const data = await res.json();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawItems: any[] = data.items ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items: CartItem[] = rawItems.map((r: any) => ({
       productId: String(r.productId ?? ''),
       name: String(r.productId ?? 'Unknown'),

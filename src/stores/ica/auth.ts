@@ -1,4 +1,4 @@
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser } from 'playwright';
 import dotenv from 'dotenv'; // Import dotenv
 
 dotenv.config(); // Load environment variables from .env file
@@ -33,7 +33,7 @@ async function authenticate(): Promise<void> {
       await page.click(acceptCookiesSelector);
       console.error('Clicked "Accept all cookies" button.');
       await page.waitForLoadState('networkidle'); // Wait for page to settle after accepting cookies
-    } catch (e) {
+    } catch {
       console.error('Cookie consent banner not found or not clickable within timeout, proceeding...');
     }
     // --- End Cookie Consent Banner handling ---
@@ -48,7 +48,7 @@ async function authenticate(): Promise<void> {
     // Wait for navigation or modal to appear after initial login click
     try {
       await page.waitForNavigation({ timeout: 15000 });
-    } catch (e) {
+    } catch {
       console.error("No navigation detected within timeout after initial login click, assuming modal or in-page content change.");
     }
     console.error('Current URL after initial login click:', page.url());
