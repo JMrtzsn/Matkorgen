@@ -1,0 +1,36 @@
+{
+  "name": "ica-shopping",
+  "version": "1.0.0",
+  "description": "Search ICA products and manage your shopping cart via an LLM. Automates ICA's online grocery store using Playwright browser automation.",
+  "mcpServers": {
+    "ica-shopping": {
+      "command": "node",
+      "args": ["${extensionPath}/dist/server.js"],
+      "env": {
+        "ICA_STORE_ID": "SERVICE_SETTING",
+        "ICA_USERNAME": "SERVICE_SETTING",
+        "ICA_PASSWORD": "SERVICE_SETTING"
+      }
+    }
+  },
+  "settings": [
+    {
+      "name": "ICA_STORE_ID",
+      "description": "Default ICA store ID (e.g. 1003577). Optional — you can also set it at runtime via the set_store tool.",
+      "envVar": "ICA_STORE_ID",
+      "sensitive": false
+    },
+    {
+      "name": "ICA_USERNAME",
+      "description": "Your ICA account username/email. Required for cart operations (add, edit, get).",
+      "envVar": "ICA_USERNAME",
+      "sensitive": false
+    },
+    {
+      "name": "ICA_PASSWORD",
+      "description": "Your ICA account password. Required for cart operations.",
+      "envVar": "ICA_PASSWORD",
+      "sensitive": true
+    }
+  ]
+}

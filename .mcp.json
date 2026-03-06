@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "ica-shopping": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/server.js"],
+      "env": {}
+    }
+  }
+}
+
