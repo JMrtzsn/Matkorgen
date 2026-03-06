@@ -240,8 +240,19 @@ async function main() {
   }
 }
 
-process.on('SIGINT', () => process.exit(0));
-process.on('SIGTERM', () => process.exit(0));
+async function shutdown() {
+  if (store) {
+    console.error('Shutting down — closing store session…');
+    await store.close().catch((err) =>
+      console.error('Error closing store:', err instanceof Error ? err.message : String(err)),
+    );
+    store = undefined;
+  }
+  process.exit(0);
+}
+
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());
 
 main().catch((error) => {
   console.error('Fatal error starting MCP server:', error);

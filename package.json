@@ -1,11 +1,12 @@
 {
-  "name": "ica",
+  "name": "matkorgen",
   "version": "1.0.0",
-  "description": "",
+  "description": "MCP server for grocery shopping — search products and manage carts across Swedish grocery stores.",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
+    "auth": "tsc && node dist/stores/ica/auth.js",
     "inspector": "npx @modelcontextprotocol/inspector node dist/server.js",
     "lint": "eslint src/",
     "test": "tsc && vitest",

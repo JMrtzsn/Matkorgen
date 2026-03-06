@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { chromium, Cookie, Page } from 'playwright';
+import { chromium, Cookie } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -17,6 +17,12 @@ import type {
   CartItem,
   CartContents,
 } from '../types';
+
+import {
+  dismissCookieBanner,
+  captureCsrfToken,
+  performLogin,
+} from './login-flow';
 
 // ---------------------------------------------------------------------------
 // Internal session state
@@ -34,6 +40,54 @@ const BASE = 'https://handlaprivatkund.ica.se';
 const SESSION_STATE_PATH = path.join(__dirname, '..', '..', '.auth', 'state.json');
 
 // ---------------------------------------------------------------------------
+// ICA API response shapes (best-effort based on observed responses)
+// ---------------------------------------------------------------------------
+
+interface IcaPrice {
+  amount?: number;
+  currency?: string;
+}
+
+interface IcaProductImage {
+  src?: string;
+}
+
+interface IcaDecoratedProduct {
+  productId?: string | number;
+  retailerProductId?: string | number;
+  name?: string;
+  promoPrice?: IcaPrice;
+  price?: IcaPrice;
+  packSizeDescription?: string;
+  image?: IcaProductImage;
+}
+
+interface IcaProductGroup {
+  decoratedProducts?: IcaDecoratedProduct[];
+}
+
+interface IcaSearchResponse {
+  productGroups?: IcaProductGroup[];
+}
+
+interface IcaCartItemResponse {
+  productId?: string | number;
+  name?: string;
+  productName?: string;
+  finalPrice?: IcaPrice;
+  quantity?: number;
+}
+
+interface IcaCartTotals {
+  itemPriceAfterPromos?: IcaPrice;
+}
+
+interface IcaCartResponse {
+  items?: IcaCartItemResponse[];
+  totals?: IcaCartTotals;
+}
+
+// ---------------------------------------------------------------------------
 // Playwright helpers (shared browser config)
 // ---------------------------------------------------------------------------
 
@@ -47,30 +101,6 @@ const BROWSER_CONTEXT_OPTIONS = {
     'Accept-Language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
   },
 };
-
-async function dismissCookieBanner(page: Page): Promise<void> {
-  try {
-    await page.locator('#onetrust-accept-btn-handler').click({ timeout: 3000 });
-    console.error('Dismissed cookie consent banner.');
-    await page.waitForTimeout(500);
-  } catch {
-    // No banner — continue
-  }
-}
-
-/**
- * Intercept CSRF tokens from outgoing requests (returns first captured token
- * or empty string after timeout).
- */
-function captureCsrfToken(page: Page, timeoutMs = 5000): Promise<string> {
-  return new Promise<string>((resolve) => {
-    page.on('request', (req) => {
-      const token = req.headers()['x-csrf-token'];
-      if (token) resolve(token);
-    });
-    setTimeout(() => resolve(''), timeoutMs);
-  });
-}
 
 // ---------------------------------------------------------------------------
 // HTTP helper — ICA-specific fetch with auto-retry on 401/403
@@ -203,31 +233,8 @@ export class Ica implements GroceryStore {
 
       await page.goto('https://www.ica.se/', { waitUntil: 'domcontentloaded' });
 
-      // Accept cookies
-      try {
-        await page
-          .locator('button:has-text("Godkänn alla cookies"), #onetrust-accept-btn-handler')
-          .first()
-          .click({ timeout: 5000 });
-        await page.waitForLoadState('networkidle');
-      } catch { /* no banner */ }
-
-      // Navigate the login flow
-      await page
-        .locator('button:has-text("Logga in"), a:has-text("Logga in"), [data-qa="login-button"]')
-        .first()
-        .click({ timeout: 15000 });
-      try { await page.waitForNavigation({ timeout: 15000 }); } catch { /* modal */ }
-
-      await page.locator('button#more-button:has-text("Fler inloggningssätt")').click({ timeout: 15000 });
-      await page.locator('a.IcaCustomers:has-text("Lösenord")').click({ timeout: 15000 });
-      await page.waitForURL('https://ims.icagruppen.se/authn/authenticate/IcaCustomers', { timeout: 15000 });
-
-      await page.fill('input#userName', username);
-      await page.fill('input#password', password);
-      await page.locator('button[type="submit"]:has-text("Logga in")').click({ timeout: 10000 });
-      await page.waitForNavigation({ timeout: 30000 });
-      console.error('Login navigation complete:', page.url());
+      // Use the shared login flow
+      await performLogin(page, username, password);
 
       // Bind session to store
       const storeUrl = `${BASE}/stores/${session.storeId}`;
@@ -278,15 +285,12 @@ export class Ica implements GroceryStore {
     });
 
     const res = await this.fetch(`/api/webproductpagews/v6/product-pages/search?${params}`);
-    const data = await res.json();
+    const data: IcaSearchResponse = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groups: any[] = data.productGroups ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw: any[] = groups.flatMap((g: any) => g.decoratedProducts ?? []);
+    const groups = data.productGroups ?? [];
+    const raw = groups.flatMap((g) => g.decoratedProducts ?? []);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return raw.map((r: any) => {
+    return raw.map((r) => {
       const productId = String(r.productId ?? '');
       const retailerId = String(r.retailerProductId ?? '');
       const priceAmount = r.promoPrice?.amount ?? r.price?.amount;
@@ -323,20 +327,25 @@ export class Ica implements GroceryStore {
       return { success: true, message: `Product ${productId} already at quantity ${targetQuantity}.` };
     }
 
-    return this.applyQuantity(productId, delta);
+    const result = await this.applyQuantity(productId, delta);
+    if (result.success) {
+      if (targetQuantity === 0) {
+        return { success: true, message: `Product ${productId} removed from cart.` };
+      }
+      return { success: true, message: `Product ${productId} quantity set to ${targetQuantity} (was ${currentQty}).` };
+    }
+    return result;
   }
 
   async getCart(): Promise<CartContents> {
     this.requireSession();
     const res = await this.fetch('/api/cart/v1/carts/active');
-    const data = await res.json();
+    const data: IcaCartResponse = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawItems: any[] = data.items ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items: CartItem[] = rawItems.map((r: any) => ({
+    const rawItems = data.items ?? [];
+    const items: CartItem[] = rawItems.map((r) => ({
       productId: String(r.productId ?? ''),
-      name: String(r.productId ?? 'Unknown'),
+      name: String(r.name ?? r.productName ?? 'Unknown'),
       price:
         r.finalPrice?.amount != null
           ? `${r.finalPrice.amount} ${r.finalPrice.currency ?? 'SEK'}`
@@ -375,10 +384,7 @@ export class Ica implements GroceryStore {
       });
       await res.json(); // consume response
 
-      if (quantity < 0) {
-        return { success: true, message: `Product ${productId} removed from cart.` };
-      }
-      return { success: true, message: `Product ${productId} quantity set to ${quantity}.` };
+      return { success: true, message: `Product ${productId} quantity adjusted by ${quantity}.` };
     } catch (error) {
       return {
         success: false,

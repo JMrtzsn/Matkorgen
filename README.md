@@ -1,6 +1,6 @@
-# ICA Shopping MCP Server
+# Matkorgen — Grocery Shopping MCP Server
 
-An MCP (Model Context Protocol) server that lets an LLM search for products, manage a shopping cart, and interact with ICA's online grocery store via Playwright browser automation.
+An MCP (Model Context Protocol) server that lets an LLM search for products, manage a shopping cart, and interact with Swedish grocery stores. Currently supports **ICA** via Playwright browser automation; the adapter pattern makes it straightforward to add new stores (Willys, Coop, etc.).
 
 ## Prerequisites
 
@@ -18,10 +18,10 @@ npx playwright install chromium
 
 # 3. Authenticate with ICA (one-time)
 #    Create a .env file with your ICA credentials:
-echo "USERNAME=your-ica-username" > .env
-echo "PASSWORD=your-ica-password" >> .env
+echo "ICA_USERNAME=your-ica-username" > .env
+echo "ICA_PASSWORD=your-ica-password" >> .env
 
-#    Run the auth script — a browser window will open, log in, and save session state:
+#    Run the auth script — a headless browser will log in and save session state:
 npm run auth
 
 # 4. Build
@@ -93,13 +93,13 @@ This project is also a **Gemini Extension** — Gemini Pro users can install it 
 ### Install from GitHub
 
 ```bash
-gemini extensions install https://github.com/<your-username>/ICA
+gemini extensions install https://github.com/<your-username>/matkorgen
 ```
 
 ### Install from a local clone
 
 ```bash
-cd ICA
+cd matkorgen
 npm install
 npx playwright install chromium
 npm run build
@@ -132,62 +132,55 @@ Once installed, just ask Gemini naturally:
 
 > *"Search for milk at ICA store 1003577 and add 2 to my cart"*
 
-Gemini will call `set_store`, `login`, `search_ica_product`, and `add_to_cart` automatically.
+Gemini will call `set_store`, `login`, `search_products`, and `add_to_cart` automatically.
 
 ## Tools
 
 | Tool | Description | Inputs |
 |------|-------------|--------|
-| `set_store` | Set the ICA store to shop from. Returns session status (authenticated/anonymous). | `storeId` (string) |
-| `search_ica_product` | Search for products by ingredient name. | `ingredient` (string) |
-| `add_to_cart` | Add a product to the cart. | `productId` (string), `quantity` (int), `productUrl` (string, optional) |
+| `set_store` | Initialise a grocery store session. | `chain` (string, e.g. "ica"), `storeId` (string) |
+| `login` | Authenticate with the active store. | `username` (string), `password` (string) |
+| `search_products` | Search for products by name or ingredient. | `query` (string) |
+| `add_to_cart` | Add a product to the cart. | `productId` (string), `quantity` (int) |
 | `get_cart` | Retrieve current cart contents. | — |
-| `edit_cart` | Change product quantity. Set to 0 to remove. | `productId` (string), `quantity` (int ≥ 0) |
+| `edit_cart` | Set product quantity in the cart. Use 0 to remove. | `productId` (string), `quantity` (int ≥ 0) |
 
 ### Example flow (what an LLM does)
 
-1. **`set_store("1003577")`** — target a specific ICA store
-2. **`search_ica_product("mjölk")`** — find milk products
-3. **`add_to_cart("2000697", 2)`** — add 2× Mjölk 3% Laktosfri
-4. **`get_cart()`** — verify cart contents
-5. **`edit_cart("2000697", 1)`** — reduce to 1
-6. **`edit_cart("2000697", 0)`** — remove from cart
+1. **`set_store("ica", "1003577")`** — target a specific ICA store
+2. **`login("user@example.com", "password")`** — authenticate
+3. **`search_products("mjölk")`** — find milk products
+4. **`add_to_cart("2000697", 2)`** — add 2× Mjölk 3% Laktosfri
+5. **`get_cart()`** — verify cart contents
+6. **`edit_cart("2000697", 1)`** — reduce to 1
+7. **`edit_cart("2000697", 0)`** — remove from cart
 
 ## Tests
 
 ```bash
-# Run all tests
+# Build & run unit tests
 npm test
 
-# Run specific test suites
-npx vitest run tests/search.test.ts
-npx vitest run tests/cart.test.ts
-npx vitest run tests/get-cart.test.ts
-npx vitest run tests/edit-cart.test.ts
-
-# End-to-end MCP server test (spawns server, connects as MCP client)
-npx vitest run tests/e2e.test.ts
+# Build & run end-to-end tests (requires ICA_USERNAME / ICA_PASSWORD in .env)
+npm run test:e2e
 ```
 
 ## Project Structure
 
 ```
 src/
-  server.ts      — MCP server entry point (stdio transport, tool registration)
-  session.ts     — Shared browser session management (auth + anonymous)
-  auth.ts        — One-time ICA login script
-  search.ts      — search_ica_product implementation
-  cart.ts         — add_to_cart implementation
-  get-cart.ts     — get_cart implementation
-  edit-cart.ts    — edit_cart implementation
+  server.ts                  — MCP server entry point (stdio transport, tool registration)
+  stores/
+    types.ts                 — Shared domain types & GroceryStore adapter interface
+    ica/
+      ica.ts                 — ICA adapter (session, HTTP API, Playwright auth)
+      auth.ts                — Standalone ICA login script (one-time auth)
+      login-flow.ts          — Shared Playwright login helpers (used by ica.ts & auth.ts)
 tests/
-  e2e.test.ts    — End-to-end MCP server test (Client + StdioClientTransport)
-  search.test.ts — Search tool unit tests
-  cart.test.ts   — Add-to-cart unit tests
-  get-cart.test.ts — Get-cart unit tests
-  edit-cart.test.ts — Edit-cart unit tests
-.mcp.json        — MCP server registration for IDEs
-gemini-extension.json — Gemini Extension manifest
-.auth/           — Session state (gitignored)
+  e2e/
+    e2e.test.ts              — End-to-end MCP server test (Client + StdioClientTransport)
+specs/                       — Feature specifications
+.mcp.json                    — MCP server registration for IDEs
+gemini-extension.json        — Gemini Extension manifest
+.auth/                       — Session state (gitignored)
 ```
-
