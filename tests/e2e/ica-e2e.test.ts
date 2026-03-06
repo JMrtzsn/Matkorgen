@@ -1,7 +1,7 @@
-// tests/e2e/e2e.test.ts
-// End-to-end MCP server test — acts as an LLM client over stdio.
+// tests/e2e/ica-e2e.test.ts
+// End-to-end ICA MCP server test — acts as an LLM client over stdio.
 // Spawns dist/server.js, connects via the MCP client SDK, and exercises:
-//   set_store → login → search_products → add_to_cart → get_cart → edit_cart
+//   set_store → login → search_products → add_to_cart → get_cart → remove_from_cart
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -13,7 +13,7 @@ dotenv.config();
 const ICA_USERNAME = process.env.ICA_USERNAME;
 const ICA_PASSWORD = process.env.ICA_PASSWORD;
 
-describe('MCP server e2e', () => {
+describe('ICA MCP server e2e', () => {
   let client: Client;
   let transport: StdioClientTransport;
 
@@ -39,7 +39,7 @@ describe('MCP server e2e', () => {
   it('lists all six tools', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(['add_to_cart', 'edit_cart', 'get_cart', 'login', 'search_products', 'set_store']);
+    expect(names).toEqual(['add_to_cart', 'get_cart', 'login', 'remove_from_cart', 'search_products', 'set_store']);
   }, 10000);
 
   it('requires set_store before search', async () => {
@@ -95,8 +95,8 @@ describe('MCP server e2e', () => {
     // 1.5. Pre-cleanup — remove the product if it's already in the cart
     console.error('--- Step 1.5: pre-cleanup ---');
     const cleanupResult = await client.callTool({
-      name: 'edit_cart',
-      arguments: { productId: product.id, quantity: 0 },
+      name: 'remove_from_cart',
+      arguments: { productId: product.id, quantity: 999 },
     });
     console.error(`Cleanup result: ${(cleanupResult.content as any)[0].text}`);
 
@@ -130,15 +130,14 @@ describe('MCP server e2e', () => {
     expect(cartItem.quantity).toBeGreaterThanOrEqual(1);
     console.error(`Cart item: ${cartItem.name}, qty: ${cartItem.quantity}`);
 
-    // 4. Edit quantity (increment by 1)
-    const newQty = cartItem.quantity + 1;
-    console.error(`--- Step 4: edit_cart → qty ${newQty} ---`);
-    const editResult = await client.callTool({
-      name: 'edit_cart',
-      arguments: { productId: product.id, quantity: newQty },
+    // 4. Add more quantity (increment by 1)
+    console.error(`--- Step 4: add_to_cart → +1 ---`);
+    const addMoreResult = await client.callTool({
+      name: 'add_to_cart',
+      arguments: { productId: product.id, quantity: 1 },
     });
-    expect(editResult.isError).toBeFalsy();
-    console.error(`Edit result: ${(editResult.content as any)[0].text}`);
+    expect(addMoreResult.isError).toBeFalsy();
+    console.error(`Add more result: ${(addMoreResult.content as any)[0].text}`);
 
     // 5. Verify updated quantity
     console.error('--- Step 5: get_cart (verify) ---');
@@ -151,14 +150,14 @@ describe('MCP server e2e', () => {
     const updatedCart = JSON.parse((verifyResult.content as any)[0].text);
     const updatedItem = updatedCart.items.find((i: any) => i.productId === product.id);
     expect(updatedItem).toBeDefined();
-    expect(updatedItem.quantity).toBe(newQty);
+    expect(updatedItem.quantity).toBe(cartItem.quantity + 1);
     console.error(`Verified: ${updatedItem.name}, qty: ${updatedItem.quantity}`);
 
     // 6. Clean up — remove from cart
-    console.error('--- Step 6: edit_cart → remove ---');
+    console.error('--- Step 6: remove_from_cart ---');
     const removeResult = await client.callTool({
-      name: 'edit_cart',
-      arguments: { productId: product.id, quantity: 0 },
+      name: 'remove_from_cart',
+      arguments: { productId: product.id, quantity: updatedItem.quantity },
     });
     expect(removeResult.isError).toBeFalsy();
     expect((removeResult.content as any)[0].text).toContain('removed');

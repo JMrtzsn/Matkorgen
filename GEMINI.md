@@ -10,8 +10,8 @@ You have access to the following tools to interact with the grocery store:
 
 *   **`set_store`**:
     *   **Description**: Initialise a grocery store session. **Must be called first.**
-    *   **Input**: `{ "chain": "string", "storeId": "string" }` (e.g., `{ "chain": "ica", "storeId": "1003577" }`)
-    *   **Usage**: Call this at the start of a session or if the user wants to switch stores.
+    *   **Input**: `{ "chain": "string", "storeId"?: "string" }` (e.g., `{ "chain": "ica", "storeId": "1003577" }`)
+    *   **Usage**: Call this at the start of a session or if the user wants to switch stores. `storeId` is required for ICA but may be optional for other chains.
 
 *   **`login`**:
     *   **Description**: Authenticates the user with their username and password.
@@ -39,10 +39,10 @@ You have access to the following tools to interact with the grocery store:
     *   **Input**: `{ "productId": "string", "quantity": number }`
     *   **Usage**: Add items found via `search_products`.
 
-*   **`edit_cart`**:
-    *   **Description**: Modifies the quantity of an item already in the cart.
-    *   **Input**: `{ "productId": "string", "quantity": number }` (set quantity to 0 to remove)
-    *   **Usage**: Change quantities or remove items.
+*   **`remove_from_cart`**:
+    *   **Description**: Remove a given quantity of a product from the cart. If quantity ≥ current amount the item is removed entirely.
+    *   **Input**: `{ "productId": "string", "quantity": number }`
+    *   **Usage**: Reduce quantity or remove items from the cart.
 
 ## Recommended Workflow
 
@@ -66,6 +66,6 @@ You have access to the following tools to interact with the grocery store:
 ## Important Notes for Gemini
 
 *   **Store Context**: You effectively control a headless browser. `set_store` initializes this browser. If the session times out or is lost, you may need to call `set_store` and `login` again.
-*   **Product IDs**: Always use the `id` returned from `search_products` or `productId` from `get_cart` when calling `add_to_cart` or `edit_cart`.
+*   **Product IDs**: Always use the `id` returned from `search_products` or `productId` from `get_cart` when calling `add_to_cart` or `remove_from_cart`.
 *   **Ambiguity**: If a user asks for "cheese", search specifically for "ost" or ask for the type (e.g., "prästost", "hushållsost").
 *   **Confirmation**: After adding or editing items, it is good practice to confirm the action with the user or show the updated cart total.

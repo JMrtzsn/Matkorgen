@@ -44,9 +44,9 @@ export interface GroceryStore {
 
   /**
    * Initialise a session bound to a specific store location.
-   * Must be called before any other method.
+   * Required by some chains (e.g. ICA); others may not need it.
    */
-  setStore(storeId: string): Promise<void>;
+  setStore?(storeId: string): Promise<void>;
 
   /** Authenticate with username / password. */
   login(username: string, password: string): Promise<void>;
@@ -57,8 +57,8 @@ export interface GroceryStore {
   /** Add a product to the cart. */
   addToCart(productId: string, quantity: number): Promise<{ success: boolean; message: string }>;
 
-  /** Set a product's quantity (0 = remove). */
-  editCart(productId: string, quantity: number): Promise<{ success: boolean; message: string }>;
+  /** Remove quantity of a product from the cart. Removes the item entirely if quantity ≥ current amount. */
+  removeFromCart(productId: string, quantity: number): Promise<{ success: boolean; message: string }>;
 
   /** Return the current cart contents. */
   getCart(): Promise<CartContents>;

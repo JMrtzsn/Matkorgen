@@ -314,25 +314,25 @@ export class Ica implements GroceryStore {
     return this.applyQuantity(productId, quantity);
   }
 
-  async editCart(
+  async removeFromCart(
     productId: string,
-    targetQuantity: number,
+    quantity: number,
   ): Promise<{ success: boolean; message: string }> {
     const cart = await this.getCart();
     const current = cart.items.find((i) => i.productId === productId);
     const currentQty = current?.quantity ?? 0;
-    const delta = targetQuantity - currentQty;
 
-    if (delta === 0) {
-      return { success: true, message: `Product ${productId} already at quantity ${targetQuantity}.` };
+    if (currentQty === 0) {
+      return { success: true, message: `Product ${productId} is not in the cart.` };
     }
 
-    const result = await this.applyQuantity(productId, delta);
+    const toRemove = Math.min(quantity, currentQty);
+    const result = await this.applyQuantity(productId, -toRemove);
     if (result.success) {
-      if (targetQuantity === 0) {
+      if (toRemove >= currentQty) {
         return { success: true, message: `Product ${productId} removed from cart.` };
       }
-      return { success: true, message: `Product ${productId} quantity set to ${targetQuantity} (was ${currentQty}).` };
+      return { success: true, message: `Product ${productId} quantity reduced by ${toRemove} (now ${currentQty - toRemove}).` };
     }
     return result;
   }
