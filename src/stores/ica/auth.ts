@@ -18,9 +18,7 @@ async function authenticate(): Promise<void> {
   const password = process.env.ICA_PASSWORD;
 
   if (!username || !password) {
-    console.error(
-      'Error: ICA_USERNAME and ICA_PASSWORD environment variables must be set (in .env or shell).',
-    );
+    console.error('Error: ICA_USERNAME and ICA_PASSWORD must be set (in .env or shell).');
     process.exitCode = 1;
     return;
   }
@@ -44,21 +42,16 @@ async function authenticate(): Promise<void> {
     console.error('Navigating to https://www.ica.se/ ...');
     await page.goto('https://www.ica.se/', { waitUntil: 'domcontentloaded' });
 
-    // Shared login flow
     await performLogin(page, username, password);
     console.error('Current URL after login:', page.url());
 
-    // Save session state
-    console.error('Saving session state...');
     await context.storageState({ path: AUTH_STATE_PATH });
     console.error(`Session state saved to ${AUTH_STATE_PATH}`);
   } catch (error) {
-    console.error('Authentication failed:', error, (error as Error).stack);
+    console.error('Authentication failed:', error);
     process.exitCode = 1;
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    if (browser) await browser.close();
   }
 }
 

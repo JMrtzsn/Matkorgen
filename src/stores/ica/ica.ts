@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { chromium, Cookie } from 'playwright';
+import { chromium, BrowserContext, Cookie, Page } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -25,6 +25,27 @@ import {
 } from './login-flow';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const BASE = 'https://handlaprivatkund.ica.se';
+const AUTH_DIR = path.join(process.cwd(), '.auth');
+const SESSION_STATE_PATH = path.join(AUTH_DIR, 'state.json');
+
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const BROWSER_CONTEXT_OPTIONS = {
+  userAgent: USER_AGENT,
+  viewport: { width: 1440, height: 900 } as const,
+  locale: 'sv-SE',
+  timezoneId: 'Europe/Stockholm',
+  extraHTTPHeaders: {
+    'Accept-Language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Internal session state
 // ---------------------------------------------------------------------------
 
@@ -36,11 +57,8 @@ interface IcaSessionState {
   cookies: Cookie[];
 }
 
-const BASE = 'https://handlaprivatkund.ica.se';
-const SESSION_STATE_PATH = path.join(__dirname, '..', '..', '.auth', 'state.json');
-
 // ---------------------------------------------------------------------------
-// ICA API response shapes (best-effort based on observed responses)
+// ICA API response shapes
 // ---------------------------------------------------------------------------
 
 interface IcaPrice {
@@ -88,19 +106,30 @@ interface IcaCartResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Playwright helpers (shared browser config)
+// Playwright helper — run a callback inside a fresh browser context
 // ---------------------------------------------------------------------------
 
-const BROWSER_CONTEXT_OPTIONS = {
-  userAgent:
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  viewport: { width: 1440, height: 900 } as const,
-  locale: 'sv-SE',
-  timezoneId: 'Europe/Stockholm',
-  extraHTTPHeaders: {
-    'Accept-Language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7',
-  },
-};
+async function withBrowser<T>(
+  fn: (context: BrowserContext, page: Page) => Promise<T>,
+  existingCookies?: Cookie[],
+): Promise<T> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
+    if (existingCookies?.length) {
+      await context.addCookies(existingCookies);
+    }
+    const page = await context.newPage();
+    try {
+      return await fn(context, page);
+    } finally {
+      await page.close();
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helper — ICA-specific fetch with auto-retry on 401/403
@@ -134,8 +163,7 @@ async function icaFetch(
     'ecom-request-source-version': '2.0.0',
     'client-route-id': randomUUID(),
     'page-view-id': randomUUID(),
-    'user-agent':
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+    'user-agent': USER_AGENT,
     ...(session.csrfToken ? { 'x-csrf-token': session.csrfToken } : {}),
     ...options.headers,
   });
@@ -144,7 +172,6 @@ async function icaFetch(
 
   let res = await fetch(url, { method, headers: buildHeaders(), body: bodyStr });
 
-  // Auto-retry on auth failure
   if (res.status === 401 || res.status === 403) {
     console.error(`Got ${res.status} — refreshing credentials and retrying…`);
     await refreshFn(session);
@@ -186,54 +213,36 @@ export class Ica implements GroceryStore {
     return this.session;
   }
 
-  // --- lifecycle -----------------------------------------------------------
-
   async setStore(storeId: string): Promise<void> {
-    // Close previous session (no-op currently, but keeps the contract).
     await this.close();
 
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
-      const page = await context.newPage();
+    const { csrfToken, cookies, cookieString } = await withBrowser(async (_ctx, page) => {
       const csrfPromise = captureCsrfToken(page);
-
       await page.goto(`${BASE}/stores/${storeId}`, {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       });
       await dismissCookieBanner(page);
 
-      const csrfToken = await csrfPromise;
-      const cookies = await context.cookies(BASE);
-      const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      const csrf = await csrfPromise;
+      const cks = await _ctx.cookies(BASE);
+      return {
+        csrfToken: csrf,
+        cookies: cks,
+        cookieString: cks.map((c) => `${c.name}=${c.value}`).join('; '),
+      };
+    });
 
-      await page.close();
-      await context.close();
-
-      this.session = { storeId, authenticated: false, cookieString, csrfToken, cookies };
-      console.error(`ICA session created for store ${storeId}. CSRF: ${csrfToken ? 'yes' : 'none'}`);
-    } finally {
-      await browser.close();
-    }
+    this.session = { storeId, authenticated: false, cookieString, csrfToken, cookies };
+    console.error(`ICA session created for store ${storeId}. CSRF: ${csrfToken ? 'yes' : 'none'}`);
   }
 
   async login(username: string, password: string): Promise<void> {
     const session = this.requireSession();
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
 
-      if (session.cookies.length > 0) {
-        await context.addCookies(session.cookies);
-      }
-
-      const page = await context.newPage();
+    const { cookies, cookieString, csrfToken } = await withBrowser(async (ctx, page) => {
       const csrfPromise = captureCsrfToken(page, 10000);
-
       await page.goto('https://www.ica.se/', { waitUntil: 'domcontentloaded' });
-
-      // Use the shared login flow
       await performLogin(page, username, password);
 
       // Bind session to store
@@ -248,31 +257,25 @@ export class Ica implements GroceryStore {
       await dismissCookieBanner(page);
 
       // Persist storage state
-      const authDir = path.dirname(SESSION_STATE_PATH);
-      if (!fs.existsSync(authDir)) {
-        fs.mkdirSync(authDir, { recursive: true });
+      if (!fs.existsSync(AUTH_DIR)) {
+        fs.mkdirSync(AUTH_DIR, { recursive: true });
       }
-      await context.storageState({ path: SESSION_STATE_PATH });
+      await ctx.storageState({ path: SESSION_STATE_PATH });
 
-      // Extract fresh credentials
-      const cookies = await context.cookies(BASE);
-      session.cookies = cookies;
-      session.cookieString = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+      const cks = await ctx.cookies(BASE);
+      return {
+        cookies: cks,
+        cookieString: cks.map((c) => `${c.name}=${c.value}`).join('; '),
+        csrfToken: await csrfPromise,
+      };
+    }, session.cookies);
 
-      const csrfToken = await csrfPromise;
-      if (csrfToken) session.csrfToken = csrfToken;
-
-      session.authenticated = true;
-      console.error('ICA login successful.');
-
-      await page.close();
-      await context.close();
-    } finally {
-      await browser.close();
-    }
+    session.cookies = cookies;
+    session.cookieString = cookieString;
+    if (csrfToken) session.csrfToken = csrfToken;
+    session.authenticated = true;
+    console.error('ICA login successful.');
   }
-
-  // --- products & cart -----------------------------------------------------
 
   async searchProducts(query: string): Promise<Product[]> {
     const session = this.requireSession();
@@ -287,24 +290,23 @@ export class Ica implements GroceryStore {
     const res = await this.fetch(`/api/webproductpagews/v6/product-pages/search?${params}`);
     const data: IcaSearchResponse = await res.json();
 
-    const groups = data.productGroups ?? [];
-    const raw = groups.flatMap((g) => g.decoratedProducts ?? []);
-
-    return raw.map((r) => {
-      const productId = String(r.productId ?? '');
-      const retailerId = String(r.retailerProductId ?? '');
-      const priceAmount = r.promoPrice?.amount ?? r.price?.amount;
-      return {
-        id: productId,
-        name: String(r.name ?? 'Unknown'),
-        price: priceAmount != null ? `${priceAmount} ${r.price?.currency ?? 'SEK'}` : undefined,
-        unit: r.packSizeDescription ?? undefined,
-        imageUrl: r.image?.src ?? undefined,
-        productUrl: retailerId
-          ? `${BASE}/stores/${session.storeId}/products/${retailerId}`
-          : undefined,
-      };
-    });
+    return (data.productGroups ?? [])
+      .flatMap((g) => g.decoratedProducts ?? [])
+      .map((r) => {
+        const productId = String(r.productId ?? '');
+        const retailerId = String(r.retailerProductId ?? '');
+        const priceAmount = r.promoPrice?.amount ?? r.price?.amount;
+        return {
+          id: productId,
+          name: String(r.name ?? 'Unknown'),
+          price: priceAmount != null ? `${priceAmount} ${r.price?.currency ?? 'SEK'}` : undefined,
+          unit: r.packSizeDescription ?? undefined,
+          imageUrl: r.image?.src ?? undefined,
+          productUrl: retailerId
+            ? `${BASE}/stores/${session.storeId}/products/${retailerId}`
+            : undefined,
+        };
+      });
   }
 
   async addToCart(
@@ -319,8 +321,7 @@ export class Ica implements GroceryStore {
     quantity: number,
   ): Promise<{ success: boolean; message: string }> {
     const cart = await this.getCart();
-    const current = cart.items.find((i) => i.productId === productId);
-    const currentQty = current?.quantity ?? 0;
+    const currentQty = cart.items.find((i) => i.productId === productId)?.quantity ?? 0;
 
     if (currentQty === 0) {
       return { success: true, message: `Product ${productId} is not in the cart.` };
@@ -328,13 +329,11 @@ export class Ica implements GroceryStore {
 
     const toRemove = Math.min(quantity, currentQty);
     const result = await this.applyQuantity(productId, -toRemove);
-    if (result.success) {
-      if (toRemove >= currentQty) {
-        return { success: true, message: `Product ${productId} removed from cart.` };
-      }
-      return { success: true, message: `Product ${productId} quantity reduced by ${toRemove} (now ${currentQty - toRemove}).` };
-    }
-    return result;
+    if (!result.success) return result;
+
+    return toRemove >= currentQty
+      ? { success: true, message: `Product ${productId} removed from cart.` }
+      : { success: true, message: `Product ${productId} quantity reduced by ${toRemove} (now ${currentQty - toRemove}).` };
   }
 
   async getCart(): Promise<CartContents> {
@@ -342,8 +341,7 @@ export class Ica implements GroceryStore {
     const res = await this.fetch('/api/cart/v1/carts/active');
     const data: IcaCartResponse = await res.json();
 
-    const rawItems = data.items ?? [];
-    const items: CartItem[] = rawItems.map((r) => ({
+    const items: CartItem[] = (data.items ?? []).map((r) => ({
       productId: String(r.productId ?? ''),
       name: String(r.name ?? r.productName ?? 'Unknown'),
       price:
@@ -364,7 +362,6 @@ export class Ica implements GroceryStore {
     return { items, totalItems, totalPrice };
   }
 
-
   async close(): Promise<void> {
     this.session = undefined;
   }
@@ -377,13 +374,12 @@ export class Ica implements GroceryStore {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const body = [{ productId, quantity }];
-      console.error(`apply-quantity request body: ${JSON.stringify(body)}`);
+      console.error(`apply-quantity: ${JSON.stringify(body)}`);
       const res = await this.fetch('/api/cart/v1/carts/active/apply-quantity', {
         method: 'POST',
         body,
       });
-      await res.json(); // consume response
-
+      await res.json();
       return { success: true, message: `Product ${productId} quantity adjusted by ${quantity}.` };
     } catch (error) {
       return {
@@ -394,36 +390,25 @@ export class Ica implements GroceryStore {
   }
 
   private async refreshCredentials(session: IcaSessionState): Promise<void> {
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
-
-      if (session.cookies.length > 0) {
-        await context.addCookies(session.cookies);
-      }
-
-      const page = await context.newPage();
+    const { cookies, cookieString, csrfToken } = await withBrowser(async (ctx, page) => {
       const csrfPromise = captureCsrfToken(page);
-
       await page.goto(`${BASE}/stores/${session.storeId}`, {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       });
 
-      const csrfToken = await csrfPromise;
-      const cookies = await context.cookies(BASE);
+      const cks = await ctx.cookies(BASE);
+      return {
+        cookies: cks,
+        cookieString: cks.map((c) => `${c.name}=${c.value}`).join('; '),
+        csrfToken: await csrfPromise,
+      };
+    }, session.cookies);
 
-      session.cookies = cookies;
-      session.cookieString = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-      session.csrfToken = csrfToken || session.csrfToken;
-
-      await page.close();
-      await context.close();
-
-      console.error(`ICA credentials refreshed. CSRF: ${session.csrfToken ? 'yes' : 'none'}`);
-    } finally {
-      await browser.close();
-    }
+    session.cookies = cookies;
+    session.cookieString = cookieString;
+    session.csrfToken = csrfToken || session.csrfToken;
+    console.error(`ICA credentials refreshed. CSRF: ${session.csrfToken ? 'yes' : 'none'}`);
   }
 
   private fetch(urlPath: string, options: FetchOptions = {}): Promise<Response> {

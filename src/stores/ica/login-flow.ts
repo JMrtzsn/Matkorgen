@@ -80,4 +80,3 @@ export async function performLogin(page: Page, username: string, password: strin
   console.error('Login navigation complete:', page.url());
 }
 
-

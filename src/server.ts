@@ -16,6 +16,18 @@ export const defaultRegistry: StoreRegistry = {
 };
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function textContent(text: string, isError = false) {
+  return { content: [{ type: 'text' as const, text }], isError };
+}
+
+// ---------------------------------------------------------------------------
 // createServer
 // ---------------------------------------------------------------------------
 
@@ -29,11 +41,6 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     return store;
   }
 
-  /**
-   * Resolve a chain name, close any existing store, create a new one,
-   * and call setStore with the given ID.  Shared by the set_store tool
-   * and auto-init so both go through the same path.
-   */
   async function initStore(chain: string, storeId?: string): Promise<GroceryStore> {
     const key = chain.toLowerCase();
     const ctor = registry[key];
@@ -62,7 +69,6 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     version: '1.0.0',
   });
 
-  // --- set_store ---
   server.registerTool(
     'set_store',
     {
@@ -75,19 +81,12 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     },
     async ({ chain, storeId }) => {
       const s = await initStore(chain, storeId);
-      const storeIdDisplay = storeId ? ` (${storeId})` : '';
-      console.error(`Store set: ${s.name}${storeIdDisplay}`);
-
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Store set to ${s.name}${storeIdDisplay}. Session is anonymous — call login before cart operations.`,
-        }],
-      };
+      const label = storeId ? ` (${storeId})` : '';
+      console.error(`Store set: ${s.name}${label}`);
+      return textContent(`Store set to ${s.name}${label}. Session is anonymous — call login before cart operations.`);
     },
   );
 
-  // --- login ---
   server.registerTool(
     'login',
     {
@@ -102,22 +101,13 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
       try {
         const s = requireStore();
         await s.login(username, password);
-        return {
-          content: [{ type: 'text' as const, text: `Login successful. Store: ${s.name}.` }],
-        };
+        return textContent(`Login successful. Store: ${s.name}.`);
       } catch (error) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Login failed: ${error instanceof Error ? error.message : String(error)}`,
-          }],
-          isError: true,
-        };
+        return textContent(`Login failed: ${errorMessage(error)}`, true);
       }
     },
   );
 
-  // --- search_products ---
   server.registerTool(
     'search_products',
     {
@@ -131,24 +121,15 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
       try {
         const products = await requireStore().searchProducts(query);
         if (products.length === 0) {
-          return {
-            content: [{ type: 'text' as const, text: `No products found for: "${query}"` }],
-            isError: true,
-          };
+          return textContent(`No products found for: "${query}"`, true);
         }
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(products, null, 2) }],
-        };
+        return textContent(JSON.stringify(products, null, 2));
       } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
+        return textContent(errorMessage(error), true);
       }
     },
   );
 
-  // --- add_to_cart ---
   server.registerTool(
     'add_to_cart',
     {
@@ -162,20 +143,13 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     async ({ productId, quantity }) => {
       try {
         const result = await requireStore().addToCart(productId, quantity);
-        return {
-          content: [{ type: 'text' as const, text: result.message }],
-          isError: !result.success,
-        };
+        return textContent(result.message, !result.success);
       } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
+        return textContent(errorMessage(error), true);
       }
     },
   );
 
-  // --- get_cart ---
   server.registerTool(
     'get_cart',
     {
@@ -185,19 +159,13 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     async () => {
       try {
         const cart = await requireStore().getCart();
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(cart, null, 2) }],
-        };
+        return textContent(JSON.stringify(cart, null, 2));
       } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
+        return textContent(errorMessage(error), true);
       }
     },
   );
 
-  // --- remove_from_cart ---
   server.registerTool(
     'remove_from_cart',
     {
@@ -211,15 +179,9 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     async ({ productId, quantity }) => {
       try {
         const result = await requireStore().removeFromCart(productId, quantity);
-        return {
-          content: [{ type: 'text' as const, text: result.message }],
-          isError: !result.success,
-        };
+        return textContent(result.message, !result.success);
       } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
+        return textContent(errorMessage(error), true);
       }
     },
   );
@@ -228,7 +190,7 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     if (store) {
       console.error('Shutting down — closing store session…');
       await store.close().catch((err) =>
-        console.error('Error closing store:', err instanceof Error ? err.message : String(err)),
+        console.error('Error closing store:', errorMessage(err)),
       );
       store = undefined;
     }
@@ -264,7 +226,7 @@ async function main() {
         console.error('Auto-authentication successful.');
       }
     } catch (err) {
-      console.error(`Auto-init failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`Auto-init failed: ${errorMessage(err)}`);
     }
   }
 
