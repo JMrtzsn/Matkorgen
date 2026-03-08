@@ -155,6 +155,7 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     {
       description:
         'Retrieve current cart contents — items, quantities, prices, totals. Requires set_store.',
+      inputSchema: z.object({}),
     },
     async () => {
       try {
