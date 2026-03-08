@@ -1,8 +1,8 @@
 /**
  * Shared Playwright-based ICA login flow.
  *
- * Used by both the standalone auth script (`auth.ts`) and the
- * runtime adapter (`Ica.login()`), so the selectors live in one place.
+ * Used by the runtime adapter (`Ica.login()`).
+ * Selectors live in one place for easy maintenance.
  */
 
 import { Page } from 'playwright';
