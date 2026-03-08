@@ -3,6 +3,18 @@
   "version": "1.0.0",
   "description": "MCP server for grocery shopping — search products and manage carts across Swedish grocery stores.",
   "main": "dist/server.js",
+  "bin": {
+    "matkorgen": "dist/server.js"
+  },
+  "files": [
+    "dist/",
+    "gemini-extension.json",
+    "GEMINI.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
@@ -12,9 +24,17 @@
     "test": "tsc && vitest",
     "test:e2e": "tsc && vitest --config vitest.config.e2e.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "grocery",
+    "ica",
+    "sweden",
+    "playwright",
+    "shopping-cart"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
