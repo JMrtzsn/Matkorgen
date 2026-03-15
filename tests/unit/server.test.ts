@@ -226,6 +226,38 @@ describe('MCP server (unit)', () => {
       expect(result.isError).toBe(true);
       expect(text(result)).toContain('Invalid credentials');
     });
+
+    it('falls back to env vars when no arguments provided', async () => {
+      process.env.ICA_USERNAME = 'env-user';
+      process.env.ICA_PASSWORD = 'env-pass';
+      try {
+        const result = await client.callTool({
+          name: 'login',
+          arguments: {},
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(text(result)).toContain('successful');
+        expect(mockStore.loggedInUser).toBe('env-user');
+      } finally {
+        delete process.env.ICA_USERNAME;
+        delete process.env.ICA_PASSWORD;
+      }
+    });
+
+    it('returns error when no credentials provided and no env vars set', async () => {
+      // Ensure env vars are not set
+      delete process.env.ICA_USERNAME;
+      delete process.env.ICA_PASSWORD;
+
+      const result = await client.callTool({
+        name: 'login',
+        arguments: {},
+      });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('username and password are required');
+    });
   });
 
   // -----------------------------------------------------------------------

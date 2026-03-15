@@ -91,16 +91,25 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     'login',
     {
       description:
-        'Authenticate with the active store. Must be called after set_store and before cart operations.',
+        'Authenticate with the active store. Must be called after set_store and before cart operations. ' +
+        'Credentials are optional — if omitted, falls back to ICA_USERNAME / ICA_PASSWORD environment variables.',
       inputSchema: {
-        username: z.string().min(1, 'Username cannot be empty.'),
-        password: z.string().min(1, 'Password cannot be empty.'),
+        username: z.string().optional().describe('ICA username/email. Falls back to ICA_USERNAME env var if omitted.'),
+        password: z.string().optional().describe('ICA password. Falls back to ICA_PASSWORD env var if omitted.'),
       },
     },
     async ({ username, password }) => {
       try {
+        const resolvedUser = username || process.env.ICA_USERNAME;
+        const resolvedPass = password || process.env.ICA_PASSWORD;
+        if (!resolvedUser || !resolvedPass) {
+          return textContent(
+            'Login failed: username and password are required. Provide them as arguments or set ICA_USERNAME / ICA_PASSWORD environment variables.',
+            true,
+          );
+        }
         const s = requireStore();
-        await s.login(username, password);
+        await s.login(resolvedUser, resolvedPass);
         return textContent(`Login successful. Store: ${s.name}.`);
       } catch (error) {
         return textContent(`Login failed: ${errorMessage(error)}`, true);
@@ -261,19 +270,11 @@ async function main() {
 
   const autoChain = process.env.STORE_CHAIN ?? 'ica';
   const autoStoreId = process.env.ICA_STORE_ID;
-  const autoUser = process.env.ICA_USERNAME;
-  const autoPass = process.env.ICA_PASSWORD;
 
   if (autoStoreId) {
     try {
       console.error(`Auto-init: ${autoChain} / ${autoStoreId}`);
-      const s = await initStore(autoChain, autoStoreId);
-
-      if (autoUser && autoPass) {
-        console.error(`Auto-authenticating: ${autoUser}`);
-        await s.login(autoUser, autoPass);
-        console.error('Auto-authentication successful.');
-      }
+      await initStore(autoChain, autoStoreId);
     } catch (err) {
       console.error(`Auto-init failed: ${errorMessage(err)}`);
     }
