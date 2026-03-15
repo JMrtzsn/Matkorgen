@@ -105,6 +105,70 @@ interface IcaCartResponse {
   totals?: IcaCartTotals;
 }
 
+// --- JSON-LD structured data (embedded in favourites / regulars pages) -----
+
+interface IcaJsonLdListItem {
+  '@type': string;
+  position: number;
+  url: string;
+}
+
+interface IcaJsonLdItemList {
+  '@type': string;
+  itemListElement?: IcaJsonLdListItem[];
+}
+
+// ---------------------------------------------------------------------------
+// JSON-LD product list parser (favourites / regulars pages)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extracts product data from JSON-LD structured data embedded in ICA's
+ * server-rendered favourites / regulars HTML pages.
+ *
+ * Returns sparse `Product` objects (id + name derived from URL slug + productUrl).
+ */
+function parseJsonLdProducts(html: string, storeId: string): Product[] {
+  // Match the specific <script> tag that holds the product listing JSON-LD.
+  const scriptPattern =
+    /<script[^>]*data-test="product-listing-structured-data"[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i;
+  const match = scriptPattern.exec(html);
+  if (!match?.[1]) {
+    return [];
+  }
+
+  let parsed: IcaJsonLdItemList;
+  try {
+    parsed = JSON.parse(match[1]) as IcaJsonLdItemList;
+  } catch {
+    console.error('Failed to parse JSON-LD from product listing page.');
+    return [];
+  }
+
+  if (parsed['@type'] !== 'ItemList' || !Array.isArray(parsed.itemListElement)) {
+    return [];
+  }
+
+  return parsed.itemListElement
+    .filter((item): item is IcaJsonLdListItem => typeof item.url === 'string')
+    .map((item) => {
+      // URL pattern: https://handla.ica.se//stores/{storeId}/products/{slug}/{productId}
+      const segments = item.url.replace(/\/+$/, '').split('/');
+      const productId = segments[segments.length - 1] ?? '';
+      const slug = segments[segments.length - 2] ?? '';
+      const name = slug
+        .split('-')
+        .map((w: string) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : ''))
+        .join(' ');
+
+      return {
+        id: productId,
+        name,
+        productUrl: `${BASE}/stores/${storeId}/products/${slug}/${productId}`,
+      };
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Playwright helper — run a callback inside a fresh browser context
 // ---------------------------------------------------------------------------
@@ -139,6 +203,8 @@ interface FetchOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
+  /** When `false`, accept `text/html` and skip the JSON content-type check. Defaults to `true`. */
+  expectJson?: boolean;
 }
 
 async function icaFetch(
@@ -149,11 +215,16 @@ async function icaFetch(
 ): Promise<Response> {
   const url = `${BASE}/stores/${session.storeId}${urlPath}`;
   const method = options.method ?? 'GET';
+  const expectJson = options.expectJson !== false;
   console.error(`icaFetch ${method} ${url}`);
 
+  const acceptHeader = expectJson
+    ? 'application/json; charset=utf-8'
+    : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+
   const buildHeaders = (): Record<string, string> => ({
-    accept: 'application/json; charset=utf-8',
-    'content-type': 'application/json; charset=utf-8',
+    accept: acceptHeader,
+    ...(expectJson ? { 'content-type': 'application/json; charset=utf-8' } : {}),
     cookie: session.cookieString,
     'cache-control': 'no-cache',
     pragma: 'no-cache',
@@ -188,11 +259,13 @@ async function icaFetch(
     throw new Error(`ICA API ${method} ${urlPath} failed: ${res.status} ${text}`);
   }
 
-  const contentType = res.headers.get('content-type') ?? '';
-  if (!contentType.includes('application/json')) {
-    const body = await res.text().catch(() => '');
-    console.error(`Non-JSON response (${res.status}, ${contentType}): ${body.slice(0, 200)}`);
-    throw new Error(`ICA API ${method} ${urlPath} returned non-JSON response (${contentType}).`);
+  if (expectJson) {
+    const contentType = res.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      const body = await res.text().catch(() => '');
+      console.error(`Non-JSON response (${res.status}, ${contentType}): ${body.slice(0, 200)}`);
+      throw new Error(`ICA API ${method} ${urlPath} returned non-JSON response (${contentType}).`);
+    }
   }
 
   return res;
@@ -366,7 +439,26 @@ export class Ica implements GroceryStore {
     this.session = undefined;
   }
 
+  async getFavourites(): Promise<Product[]> {
+    return this.fetchProductList('/favorites');
+  }
+
+  async getPurchaseHistory(): Promise<Product[]> {
+    return this.fetchProductList('/regulars');
+  }
+
   // --- internal helpers ----------------------------------------------------
+
+  /**
+   * Fetches a server-rendered ICA page (favourites or regulars) and extracts
+   * product data from the embedded JSON-LD structured data.
+   */
+  private async fetchProductList(pagePath: string): Promise<Product[]> {
+    const session = this.requireSession();
+    const res = await this.fetch(pagePath, { expectJson: false });
+    const html = await res.text();
+    return parseJsonLdProducts(html, session.storeId);
+  }
 
   private async applyQuantity(
     productId: string,

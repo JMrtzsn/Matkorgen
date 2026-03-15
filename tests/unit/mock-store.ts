@@ -66,6 +66,11 @@ export class MockStore implements GroceryStore {
   /** When set, `removeFromCart()` will return `{ success: false, message }`. */
   removeFromCartError: string | undefined;
 
+  /** When set, `getFavourites()` will throw with this message. */
+  getFavouritesError: string | undefined;
+  /** When set, `getPurchaseHistory()` will throw with this message. */
+  getPurchaseHistoryError: string | undefined;
+
   // --- in-memory cart ---
   private cart = new Map<string, CartItem>();
 
@@ -148,6 +153,22 @@ export class MockStore implements GroceryStore {
     const items = Array.from(this.cart.values());
     const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
     return { items, totalItems, totalPrice: '0.00 SEK' };
+  }
+
+  async getFavourites(): Promise<Product[]> {
+    if (this.getFavouritesError) {
+      throw new Error(this.getFavouritesError);
+    }
+    // Return first two mock products as favourites
+    return MOCK_PRODUCTS.slice(0, 2);
+  }
+
+  async getPurchaseHistory(): Promise<Product[]> {
+    if (this.getPurchaseHistoryError) {
+      throw new Error(this.getPurchaseHistoryError);
+    }
+    // Return last two mock products as purchase history
+    return MOCK_PRODUCTS.slice(1);
   }
 
   async close(): Promise<void> {

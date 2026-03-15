@@ -59,12 +59,14 @@ describe('MCP server (unit)', () => {
   // Tool listing
   // -----------------------------------------------------------------------
 
-  it('lists all six tools', async () => {
+  it('lists all eight tools', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       'add_to_cart',
       'get_cart',
+      'get_favourites',
+      'get_purchase_history',
       'login',
       'remove_from_cart',
       'search_products',
@@ -177,6 +179,8 @@ describe('MCP server (unit)', () => {
       { name: 'add_to_cart', arguments: { productId: '1', quantity: 1 } },
       { name: 'remove_from_cart', arguments: { productId: '1', quantity: 1 } },
       { name: 'get_cart', arguments: {} },
+      { name: 'get_favourites', arguments: {} },
+      { name: 'get_purchase_history', arguments: {} },
     ];
 
     for (const tool of toolsRequiringStore) {
@@ -405,6 +409,140 @@ describe('MCP server (unit)', () => {
 
       expect(result.isError).toBe(true);
       expect(text(result)).toContain('Cart locked');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // get_favourites
+  // -----------------------------------------------------------------------
+
+  describe('get_favourites', () => {
+    beforeEach(async () => {
+      await client.callTool({
+        name: 'set_store',
+        arguments: { chain: 'mock', storeId: '42' },
+      });
+    });
+
+    it('returns favourite products', async () => {
+      const result = await client.callTool({ name: 'get_favourites', arguments: {} });
+
+      expect(result.isError).toBeFalsy();
+      const products = JSON.parse(text(result));
+      expect(products).toHaveLength(2);
+      expect(products[0].id).toBe('1001');
+      expect(products[1].id).toBe('1002');
+    });
+
+    it('returns isError when store throws', async () => {
+      mockStore.getFavouritesError = 'Not authenticated';
+
+      const result = await client.callTool({ name: 'get_favourites', arguments: {} });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('Not authenticated');
+    });
+
+    it('returns isError when store does not support favourites', async () => {
+      const noFavStore = {
+        get name() { return 'NoFavStore'; },
+        login: mockStore.login.bind(mockStore),
+        searchProducts: mockStore.searchProducts.bind(mockStore),
+        addToCart: mockStore.addToCart.bind(mockStore),
+        removeFromCart: mockStore.removeFromCart.bind(mockStore),
+        getCart: mockStore.getCart.bind(mockStore),
+        close: mockStore.close.bind(mockStore),
+        // Note: no getFavourites or getPurchaseHistory
+      };
+
+      const { server: server2, shutdown: shutdown2 } = createServer({
+        nofav: () => noFavStore,
+      });
+
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      await server2.connect(st);
+      const client2 = new Client({ name: 'test-nofav', version: '1.0.0' });
+      await client2.connect(ct);
+
+      await client2.callTool({
+        name: 'set_store',
+        arguments: { chain: 'nofav' },
+      });
+
+      const result = await client2.callTool({ name: 'get_favourites', arguments: {} });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('does not support favourites');
+
+      await shutdown2();
+      await client2.close();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // get_purchase_history
+  // -----------------------------------------------------------------------
+
+  describe('get_purchase_history', () => {
+    beforeEach(async () => {
+      await client.callTool({
+        name: 'set_store',
+        arguments: { chain: 'mock', storeId: '42' },
+      });
+    });
+
+    it('returns purchase history products', async () => {
+      const result = await client.callTool({ name: 'get_purchase_history', arguments: {} });
+
+      expect(result.isError).toBeFalsy();
+      const products = JSON.parse(text(result));
+      expect(products).toHaveLength(2);
+      expect(products[0].id).toBe('1002');
+      expect(products[1].id).toBe('1003');
+    });
+
+    it('returns isError when store throws', async () => {
+      mockStore.getPurchaseHistoryError = 'Session expired';
+
+      const result = await client.callTool({ name: 'get_purchase_history', arguments: {} });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('Session expired');
+    });
+
+    it('returns isError when store does not support purchase history', async () => {
+      const noHistStore = {
+        get name() { return 'NoHistStore'; },
+        login: mockStore.login.bind(mockStore),
+        searchProducts: mockStore.searchProducts.bind(mockStore),
+        addToCart: mockStore.addToCart.bind(mockStore),
+        removeFromCart: mockStore.removeFromCart.bind(mockStore),
+        getCart: mockStore.getCart.bind(mockStore),
+        close: mockStore.close.bind(mockStore),
+        // Note: no getFavourites or getPurchaseHistory
+      };
+
+      const { server: server2, shutdown: shutdown2 } = createServer({
+        nohist: () => noHistStore,
+      });
+
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      await server2.connect(st);
+      const client2 = new Client({ name: 'test-nohist', version: '1.0.0' });
+      await client2.connect(ct);
+
+      await client2.callTool({
+        name: 'set_store',
+        arguments: { chain: 'nohist' },
+      });
+
+      const result = await client2.callTool({ name: 'get_purchase_history', arguments: {} });
+
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('does not support purchase history');
+
+      await shutdown2();
+      await client2.close();
     });
   });
 

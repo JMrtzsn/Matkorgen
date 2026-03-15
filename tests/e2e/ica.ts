@@ -1,7 +1,8 @@
 // tests/e2e/ica-e2e.test.ts
 // End-to-end ICA MCP server test — acts as an LLM client over stdio.
 // Spawns dist/server.js, connects via the MCP client SDK, and exercises:
-//   set_store → login → search_products → add_to_cart → get_cart → remove_from_cart
+//   set_store → login → get_favourites → get_purchase_history →
+//   search_products → add_to_cart → get_cart → remove_from_cart
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -36,10 +37,19 @@ describe('ICA MCP server e2e', () => {
     await client.close();
   }, 15000);
 
-  it('lists all six tools', async () => {
+  it('lists all eight tools', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(['add_to_cart', 'get_cart', 'login', 'remove_from_cart', 'search_products', 'set_store']);
+    expect(names).toEqual([
+      'add_to_cart',
+      'get_cart',
+      'get_favourites',
+      'get_purchase_history',
+      'login',
+      'remove_from_cart',
+      'search_products',
+      'set_store',
+    ]);
   }, 10000);
 
   it('requires set_store before search', async () => {
@@ -51,7 +61,7 @@ describe('ICA MCP server e2e', () => {
     expect((result.content as any)[0].text).toContain('set_store');
   }, 10000);
 
-  it('set_store → search → add → get → edit → verify → cleanup', async () => {
+  it('set_store → login → favourites → regulars → search → add → get → edit → verify → cleanup', async () => {
     // 0. Set store
     console.error('--- Step 0: set_store ---');
     const storeResult = await client.callTool({
@@ -76,6 +86,42 @@ describe('ICA MCP server e2e', () => {
     const loginText = (loginResult.content as any)[0].text as string;
     expect(loginText).toContain('successful');
     console.error(`Login result: ${loginText}`);
+
+    // 0.6. Get favourites
+    console.error('--- Step 0.6: get_favourites ---');
+    const favResult = await client.callTool({
+      name: 'get_favourites',
+      arguments: {},
+    });
+    expect(favResult.isError).toBeFalsy();
+
+    const favourites = JSON.parse((favResult.content as any)[0].text);
+    expect(Array.isArray(favourites)).toBe(true);
+    expect(favourites.length).toBeGreaterThan(0);
+
+    const firstFav = favourites[0];
+    expect(firstFav.id).toBeTruthy();
+    expect(firstFav.name).toBeTruthy();
+    expect(firstFav.productUrl).toContain('/products/');
+    console.error(`Favourites: ${favourites.length} products (first: ${firstFav.name}, ID: ${firstFav.id})`);
+
+    // 0.7. Get purchase history (regulars)
+    console.error('--- Step 0.7: get_purchase_history ---');
+    const histResult = await client.callTool({
+      name: 'get_purchase_history',
+      arguments: {},
+    });
+    expect(histResult.isError).toBeFalsy();
+
+    const regulars = JSON.parse((histResult.content as any)[0].text);
+    expect(Array.isArray(regulars)).toBe(true);
+    expect(regulars.length).toBeGreaterThan(0);
+
+    const firstRegular = regulars[0];
+    expect(firstRegular.id).toBeTruthy();
+    expect(firstRegular.name).toBeTruthy();
+    expect(firstRegular.productUrl).toContain('/products/');
+    console.error(`Purchase history: ${regulars.length} products (first: ${firstRegular.name}, ID: ${firstRegular.id})`);
 
     // 1. Search for a product
     console.error('--- Step 1: search_products ---');

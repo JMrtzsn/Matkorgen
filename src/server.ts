@@ -187,6 +187,54 @@ export function createServer(registry: StoreRegistry = defaultRegistry) {
     },
   );
 
+  server.registerTool(
+    'get_favourites',
+    {
+      description:
+        'Retrieve the logged-in user\'s favourite / starred products. Requires set_store and login. Not all stores support this.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const s = requireStore();
+        if (!s.getFavourites) {
+          return textContent(`Store "${s.name}" does not support favourites.`, true);
+        }
+        const products = await s.getFavourites();
+        if (products.length === 0) {
+          return textContent('No favourite products found.', true);
+        }
+        return textContent(JSON.stringify(products, null, 2));
+      } catch (error) {
+        return textContent(errorMessage(error), true);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_purchase_history',
+    {
+      description:
+        'Retrieve products from the logged-in user\'s purchase history. Requires set_store and login. Not all stores support this.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const s = requireStore();
+        if (!s.getPurchaseHistory) {
+          return textContent(`Store "${s.name}" does not support purchase history.`, true);
+        }
+        const products = await s.getPurchaseHistory();
+        if (products.length === 0) {
+          return textContent('No purchase history found.', true);
+        }
+        return textContent(JSON.stringify(products, null, 2));
+      } catch (error) {
+        return textContent(errorMessage(error), true);
+      }
+    },
+  );
+
   async function shutdown(): Promise<void> {
     if (store) {
       console.error('Shutting down — closing store session…');

@@ -63,6 +63,11 @@ export interface GroceryStore {
   /** Return the current cart contents. */
   getCart(): Promise<CartContents>;
 
+  /** Return the user's favourite / starred products, if supported. */
+  getFavourites?(): Promise<Product[]>;
+
+  /** Return products from the user's purchase history, if supported. */
+  getPurchaseHistory?(): Promise<Product[]>;
 
   /** Tear down any resources held by the adapter. */
   close(): Promise<void>;
