@@ -27,7 +27,7 @@
       "name": "ICA Password",
       "description": "Your ICA account password.",
       "envVar": "ICA_PASSWORD",
-      "sensitive": true
+      "sensitive": false
     }
   ]
 }
