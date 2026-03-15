@@ -21,7 +21,8 @@
     "inspector": "npx @modelcontextprotocol/inspector node dist/server.js",
     "lint": "eslint src/",
     "test": "tsc && vitest",
-    "test:e2e": "tsc && vitest --config vitest.config.e2e.ts"
+    "test:e2e": "tsc && vitest --config vitest.config.e2e.ts",
+    "postinstall": "npm run build && npx playwright install chromium"
   },
   "keywords": [
     "mcp",
@@ -30,7 +31,8 @@
     "ica",
     "sweden",
     "playwright",
-    "shopping-cart"
+    "shopping-cart",
+    "gemini-cli-extension"
   ],
   "author": "",
   "license": "MIT",

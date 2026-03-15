@@ -1,34 +1,31 @@
 {
-  "name": "ica-shopping",
+  "name": "matkorgen",
   "version": "1.0.0",
-  "description": "Search ICA products and manage your shopping cart via an LLM. Automates ICA's online grocery store using Playwright browser automation.",
+  "description": "Grocery shopping MCP server for Swedish stores. Search products, manage your cart, view favourites and purchase history. Currently supports ICA.",
+  "contextFileName": "GEMINI.md",
   "mcpServers": {
-    "ica-shopping": {
+    "matkorgen": {
       "command": "node",
-      "args": ["${extensionPath}/dist/server.js"],
-      "env": {
-        "ICA_STORE_ID": "SERVICE_SETTING",
-        "ICA_USERNAME": "SERVICE_SETTING",
-        "ICA_PASSWORD": "SERVICE_SETTING"
-      }
+      "args": ["${extensionPath}${/}dist${/}server.js"],
+      "cwd": "${extensionPath}"
     }
   },
   "settings": [
     {
-      "name": "ICA_STORE_ID",
+      "name": "ICA Store ID",
       "description": "Default ICA store ID (e.g. 1003577). Optional — you can also set it at runtime via the set_store tool.",
       "envVar": "ICA_STORE_ID",
       "sensitive": false
     },
     {
-      "name": "ICA_USERNAME",
-      "description": "Your ICA account username/email. Required for cart operations (add, edit, get).",
+      "name": "ICA Username",
+      "description": "Your ICA account username/email. Required for cart, favourites, and purchase history.",
       "envVar": "ICA_USERNAME",
       "sensitive": false
     },
     {
-      "name": "ICA_PASSWORD",
-      "description": "Your ICA account password. Required for cart operations.",
+      "name": "ICA Password",
+      "description": "Your ICA account password.",
       "envVar": "ICA_PASSWORD",
       "sensitive": true
     }
