@@ -13,7 +13,7 @@ supports **ICA** via Playwright browser automation.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/matkorgen.git
+git clone https://github.com/JMrtzsn/Matkorgen.git
 cd matkorgen
 
 # 2. Install dependencies
@@ -100,7 +100,10 @@ directly without setting up a local MCP client.
 ### Install from GitHub
 
 ```bash
-gemini extensions install https://github.com/<your-username>/matkorgen
+gemini extensions install https://github.com/JMrtzsn/Matkorgen
+
+# Install Playwright (required for login — Gemini CLI does not run npm install automatically)
+cd ~/.gemini/extensions/matkorgen && npm install
 ```
 
 ### Install from a local clone
@@ -108,8 +111,6 @@ gemini extensions install https://github.com/<your-username>/matkorgen
 ```bash
 cd matkorgen
 npm install
-npx playwright install chromium
-npm run build
 gemini extensions link .
 ```
 
@@ -145,14 +146,16 @@ automatically.
 
 ## Tools
 
-| Tool              | Description                                        | Inputs                                           |
-|-------------------|----------------------------------------------------|--------------------------------------------------|
-| `set_store`       | Initialise a grocery store session.                | `chain` (string, e.g. "ica"), `storeId` (string) |
-| `login`           | Authenticate with the active store.                | `username` (string), `password` (string)         |
-| `search_products` | Search for products by name or ingredient.         | `query` (string)                                 |
-| `add_to_cart`     | Add a product to the cart.                         | `productId` (string), `quantity` (int)           |
-| `get_cart`        | Retrieve current cart contents.                    | —                                                |
-| `edit_cart`       | Set product quantity in the cart. Use 0 to remove. | `productId` (string), `quantity` (int ≥ 0)       |
+| Tool                 | Description                                        | Inputs                                           |
+|----------------------|----------------------------------------------------|--------------------------------------------------|
+| `set_store`          | Initialise a grocery store session.                | `chain` (string, e.g. "ica"), `storeId` (string) |
+| `login`              | Authenticate with the active store.                | `username` (string), `password` (string)         |
+| `search_products`    | Search for products by name or ingredient.         | `query` (string)                                 |
+| `get_favourites`     | Retrieve starred/favourite products.               | —                                                |
+| `get_purchase_history` | Retrieve frequently purchased products (regulars). | —                                              |
+| `add_to_cart`        | Add a product to the cart.                         | `productId` (string), `quantity` (int)           |
+| `get_cart`           | Retrieve current cart contents.                    | —                                                |
+| `edit_cart`          | Set product quantity in the cart. Use 0 to remove. | `productId` (string), `quantity` (int ≥ 0)       |
 
 ### Example flow (what an LLM does)
 
