@@ -14,18 +14,14 @@ supports **ICA** via Playwright browser automation.
 ```bash
 # 1. Clone the repository
 git clone https://github.com/JMrtzsn/Matkorgen.git
-cd matkorgen
+cd Matkorgen
 
-# 2. Install dependencies
+# 2. Install dependencies (also builds dist/server.js and downloads Chromium)
 npm install
-npx playwright install chromium
 
 # 3. (Optional) Add ICA credentials for cart operations
 echo "ICA_USERNAME=your-ica-username" > .env
 echo "ICA_PASSWORD=your-ica-password" >> .env
-
-# 4. Build
-npm run build
 ```
 
 > **Anonymous mode:** If you skip step 3, the server still works for
@@ -102,9 +98,12 @@ directly without setting up a local MCP client.
 ```bash
 gemini extensions install https://github.com/JMrtzsn/Matkorgen
 
-# Install Playwright (required for login — Gemini CLI does not run npm install automatically)
+# Build the bundle and install Playwright (Gemini CLI does not run npm install automatically)
 cd ~/.gemini/extensions/matkorgen && npm install
 ```
+
+> `npm install` runs a `postinstall` script that bundles the TypeScript source
+> with esbuild and downloads a Chromium binary for the login flow.
 
 ### Install from a local clone
 

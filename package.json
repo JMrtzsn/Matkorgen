@@ -22,7 +22,7 @@
     "lint": "eslint src/",
     "test": "tsc && vitest",
     "test:e2e": "tsc && vitest --config vitest.config.e2e.ts",
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npx esbuild src/server.ts --bundle --platform=node --outfile=dist/server.js --external:playwright && npx playwright install chromium"
   },
   "keywords": [
     "mcp",
@@ -38,6 +38,7 @@
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
+    "esbuild": "^0.27.4",
     "playwright": "^1.58.2"
   },
   "devDependencies": {
@@ -46,7 +47,6 @@
     "@playwright/test": "^1.58.2",
     "@types/node": "^25.3.0",
     "dotenv": "^17.3.1",
-    "esbuild": "^0.27.4",
     "eslint": "^10.0.2",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18",
