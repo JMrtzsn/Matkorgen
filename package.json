@@ -22,7 +22,7 @@
     "lint": "eslint src/",
     "test": "tsc && vitest",
     "test:e2e": "tsc && vitest --config vitest.config.e2e.ts",
-    "postinstall": "npm run build && npx playwright install chromium"
+    "postinstall": "npx playwright install chromium"
   },
   "keywords": [
     "mcp",

@@ -1,9 +1,9 @@
 # Node.js
 node_modules/
-dist/
 
 # Playwright
 .auth/
+**/.auth/
 *.png
 
 # Environment variables

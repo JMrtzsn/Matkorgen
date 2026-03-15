@@ -1,0 +1,222 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.defaultRegistry = void 0;
+exports.createServer = createServer;
+const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
+const zod_1 = require("zod");
+const ica_1 = require("./stores/ica/ica");
+exports.defaultRegistry = {
+    ica: () => new ica_1.Ica(),
+};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+function textContent(text, isError = false) {
+    return { content: [{ type: 'text', text }], isError };
+}
+// ---------------------------------------------------------------------------
+// createServer
+// ---------------------------------------------------------------------------
+function createServer(registry = exports.defaultRegistry) {
+    let store;
+    function requireStore() {
+        if (!store) {
+            throw new Error('No store session. Call set_store first.');
+        }
+        return store;
+    }
+    async function initStore(chain, storeId) {
+        const key = chain.toLowerCase();
+        const ctor = registry[key];
+        if (!ctor) {
+            const supported = Object.keys(registry).join(', ');
+            throw new Error(`Unknown store chain: "${chain}". Supported: ${supported}`);
+        }
+        if (store) {
+            await store.close();
+            store = undefined;
+        }
+        store = ctor();
+        if (store.setStore) {
+            if (!storeId) {
+                throw new Error(`Store chain "${chain}" requires a storeId.`);
+            }
+            await store.setStore(storeId);
+        }
+        return store;
+    }
+    const server = new mcp_js_1.McpServer({
+        name: 'matkorgen',
+        version: '1.0.0',
+    });
+    server.registerTool('set_store', {
+        description: 'Initialise a grocery store session. Provide the store chain (e.g. "ica") and optionally a store location ID (required for ICA). Must be called first.',
+        inputSchema: {
+            chain: zod_1.z.string().min(1, 'Store chain cannot be empty (e.g. "ica").'),
+            storeId: zod_1.z.string().min(1, 'Store ID cannot be empty.').optional(),
+        },
+    }, async ({ chain, storeId }) => {
+        const s = await initStore(chain, storeId);
+        const label = storeId ? ` (${storeId})` : '';
+        console.error(`Store set: ${s.name}${label}`);
+        return textContent(`Store set to ${s.name}${label}. Session is anonymous — call login before cart operations.`);
+    });
+    server.registerTool('login', {
+        description: 'Authenticate with the active store. Must be called after set_store and before cart operations.',
+        inputSchema: {
+            username: zod_1.z.string().min(1, 'Username cannot be empty.'),
+            password: zod_1.z.string().min(1, 'Password cannot be empty.'),
+        },
+    }, async ({ username, password }) => {
+        try {
+            const s = requireStore();
+            await s.login(username, password);
+            return textContent(`Login successful. Store: ${s.name}.`);
+        }
+        catch (error) {
+            return textContent(`Login failed: ${errorMessage(error)}`, true);
+        }
+    });
+    server.registerTool('search_products', {
+        description: 'Search for products by name or ingredient. Returns IDs, names, prices, and URLs. Requires set_store.',
+        inputSchema: {
+            query: zod_1.z.string().min(1, 'Search query cannot be empty.'),
+        },
+    }, async ({ query }) => {
+        try {
+            const products = await requireStore().searchProducts(query);
+            if (products.length === 0) {
+                return textContent(`No products found for: "${query}"`, true);
+            }
+            return textContent(JSON.stringify(products, null, 2));
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    server.registerTool('add_to_cart', {
+        description: 'Add a product to the shopping cart by product ID and quantity. Requires set_store (and login for persistent carts).',
+        inputSchema: {
+            productId: zod_1.z.string().min(1, 'Product ID cannot be empty.'),
+            quantity: zod_1.z.number().int().min(1, 'Quantity must be at least 1.'),
+        },
+    }, async ({ productId, quantity }) => {
+        try {
+            const result = await requireStore().addToCart(productId, quantity);
+            return textContent(result.message, !result.success);
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    server.registerTool('get_cart', {
+        description: 'Retrieve current cart contents — items, quantities, prices, totals. Requires set_store.',
+        inputSchema: zod_1.z.object({}),
+    }, async () => {
+        try {
+            const cart = await requireStore().getCart();
+            return textContent(JSON.stringify(cart, null, 2));
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    server.registerTool('remove_from_cart', {
+        description: 'Remove a given quantity of a product from the cart. If quantity ≥ current amount the item is removed entirely. Requires set_store.',
+        inputSchema: {
+            productId: zod_1.z.string().min(1, 'Product ID cannot be empty.'),
+            quantity: zod_1.z.number().int().min(1, 'Quantity must be at least 1.'),
+        },
+    }, async ({ productId, quantity }) => {
+        try {
+            const result = await requireStore().removeFromCart(productId, quantity);
+            return textContent(result.message, !result.success);
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    server.registerTool('get_favourites', {
+        description: 'Retrieve the logged-in user\'s favourite / starred products. Requires set_store and login. Not all stores support this.',
+        inputSchema: zod_1.z.object({}),
+    }, async () => {
+        try {
+            const s = requireStore();
+            if (!s.getFavourites) {
+                return textContent(`Store "${s.name}" does not support favourites.`, true);
+            }
+            const products = await s.getFavourites();
+            if (products.length === 0) {
+                return textContent('No favourite products found.', true);
+            }
+            return textContent(JSON.stringify(products, null, 2));
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    server.registerTool('get_purchase_history', {
+        description: 'Retrieve products from the logged-in user\'s purchase history. Requires set_store and login. Not all stores support this.',
+        inputSchema: zod_1.z.object({}),
+    }, async () => {
+        try {
+            const s = requireStore();
+            if (!s.getPurchaseHistory) {
+                return textContent(`Store "${s.name}" does not support purchase history.`, true);
+            }
+            const products = await s.getPurchaseHistory();
+            if (products.length === 0) {
+                return textContent('No purchase history found.', true);
+            }
+            return textContent(JSON.stringify(products, null, 2));
+        }
+        catch (error) {
+            return textContent(errorMessage(error), true);
+        }
+    });
+    async function shutdown() {
+        if (store) {
+            console.error('Shutting down — closing store session…');
+            await store.close().catch((err) => console.error('Error closing store:', errorMessage(err)));
+            store = undefined;
+        }
+    }
+    return { server, shutdown, initStore };
+}
+// ---------------------------------------------------------------------------
+// CLI entry point
+// ---------------------------------------------------------------------------
+async function main() {
+    const { server, shutdown, initStore } = createServer(exports.defaultRegistry);
+    const transport = new stdio_js_1.StdioServerTransport();
+    await server.connect(transport);
+    console.error('Matkorgen MCP server running on stdio');
+    const autoChain = process.env.STORE_CHAIN ?? 'ica';
+    const autoStoreId = process.env.ICA_STORE_ID;
+    const autoUser = process.env.ICA_USERNAME;
+    const autoPass = process.env.ICA_PASSWORD;
+    if (autoStoreId) {
+        try {
+            console.error(`Auto-init: ${autoChain} / ${autoStoreId}`);
+            const s = await initStore(autoChain, autoStoreId);
+            if (autoUser && autoPass) {
+                console.error(`Auto-authenticating: ${autoUser}`);
+                await s.login(autoUser, autoPass);
+                console.error('Auto-authentication successful.');
+            }
+        }
+        catch (err) {
+            console.error(`Auto-init failed: ${errorMessage(err)}`);
+        }
+    }
+    process.on('SIGINT', () => void shutdown().then(() => process.exit(0)));
+    process.on('SIGTERM', () => void shutdown().then(() => process.exit(0)));
+}
+main().catch((error) => {
+    console.error('Fatal error starting MCP server:', error);
+    process.exit(1);
+});
